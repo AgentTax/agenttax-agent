@@ -23,11 +23,13 @@ async function calculateTax({ role, amount, buyer_state, transaction_type, count
   return resp.json();
 }
 
-async function logTrade({ side, asset, quantity, price_per_unit }) {
+async function logTrade({ trade_type, asset_symbol, quantity, price_per_unit, resident_state }) {
+  const body = { trade_type, asset_symbol, quantity, price_per_unit };
+  if (resident_state) body.resident_state = resident_state;
   const resp = await fetch(`${BASE_URL}/api/v1/trades`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
-    body: JSON.stringify({ side, asset, quantity, price_per_unit }),
+    body: JSON.stringify(body),
   });
   return resp.json();
 }

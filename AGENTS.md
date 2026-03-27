@@ -16,18 +16,53 @@ AgentTax calculates US sales tax, use tax, and capital gains for AI agent transa
 
 ## 5-Minute Integration
 
-### 1. Get an API key (or skip — demo mode works without one)
+### 1. Sign up and save your API key
 
 ```bash
-# Create account
 curl -X POST https://agenttax.io/api/v1/auth/signup \
   -H "Content-Type: application/json" \
   -d '{"email": "you@example.com", "password": "securepass", "agent_name": "my-agent"}'
-
-# Response includes session token — use it to create API keys
 ```
 
-Or just use demo mode (no key needed, rate-limited).
+Response (truncated):
+
+```json
+{
+  "success": true,
+  "api_key": {
+    "key": "atx_live_abc123xyz...",
+    "prefix": "atx_live_abc1",
+    "note": "Save this key — it won't be shown again."
+  },
+  "next_steps": [
+    "Save your API key securely",
+    "Try a test calculation: POST /api/v1/calculate"
+  ]
+}
+```
+
+**Save the `api_key.key` value immediately.** It is only returned once at signup.
+
+Or skip signup and use demo mode (no key needed, 50 calls/day).
+
+### 1.5. Configure your nexus states (sellers only)
+
+If you're a seller, you must configure which states you have economic nexus in. Without this, all seller calculations return $0 (no collection obligation).
+
+```bash
+curl -X POST https://agenttax.io/api/v1/nexus \
+  -H "X-API-Key: atx_live_your_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nexus": {
+      "TX": { "hasNexus": true, "reason": "Economic nexus — over $500K revenue" },
+      "NY": { "hasNexus": true, "reason": "Physical presence" },
+      "CA": { "hasNexus": true, "reason": "Economic nexus" }
+    }
+  }'
+```
+
+Buyers don't need nexus configuration — use tax is calculated regardless.
 
 ### 2. Calculate tax on a transaction
 
@@ -53,7 +88,8 @@ curl -X POST https://agenttax.io/api/v1/calculate \
 {
   "success": true,
   "engine_version": "1.5",
-  "transaction_id": "txn_abc123",
+  "transaction_id": "txn_m3k9x2_a1b2c3",
+  "timestamp": "2026-03-26T14:30:00.000Z",
   "amount": 500,
   "buyer_state": "TX",
   "buyer_zip": "78701",
@@ -69,12 +105,50 @@ curl -X POST https://agenttax.io/api/v1/calculate \
     "combined_rate": 0.0825,
     "rate": 0.0825,
     "amount": 33.00,
+    "gross_amount": 500,
     "taxable_amount": 400,
     "taxable_percentage": 0.80,
-    "reason": "Austin, TX 8.25% combined rate applied to 80% of Compute/Processing ($400.00 of $500.00)."
+    "reason": "Austin, TX 8.25% combined rate applied to 80% of Compute/Processing ($400.00 of $500.00).",
+    "note": "TX Tax Code §151.351 — 20% statutory exemption"
   },
-  "confidence": { "score": 90, "level": "complete" },
-  "audit_trail": { "..." }
+  "confidence": { "score": 90, "level": "complete", "factors": ["..."] },
+  "audit_trail": {
+    "engine_version": "1.5",
+    "jurisdiction_chain": [
+      { "level": "state", "jurisdiction": "Texas", "code": "TX", "rate": 0.0625, "applied": true, "source": "TAX_RATES" },
+      { "level": "local", "jurisdiction": "Austin", "zip": "78701", "rate": 0.02, "applied": true, "source": "LOCAL_RATES" },
+      { "level": "special_rule", "rules": [
+        { "rule": "taxable_percentage", "state": "TX", "value": 0.80, "effect": "Taxable base reduced to 80%", "note": "TX Tax Code §151.351 — 20% statutory exemption" }
+      ]}
+    ],
+    "combined_rate": 0.0825,
+    "classification": {
+      "input_transaction_type": "compute",
+      "input_work_type": "compute",
+      "resolved_work_type": "compute",
+      "work_type_source": "explicit",
+      "economic_category": "data_processing",
+      "label": "Compute/Processing"
+    },
+    "taxability": {
+      "source": "TAXABILITY_MATRIX",
+      "state": "TX",
+      "category": "data_processing",
+      "taxable": true,
+      "note": "TX Tax Code §151.351 — 20% statutory exemption"
+    },
+    "exemptions_evaluated": [
+      { "check": "no_sales_tax", "result": "not_exempt", "detail": "Texas has 6.25% state sales tax" },
+      { "check": "financial_service", "result": "not_exempt", "detail": "Category is data_processing" },
+      { "check": "b2b_statutory", "result": "not_exempt", "detail": "B2B exemption does not apply in Texas for data_processing" }
+    ],
+    "final_determination": "taxable",
+    "policy_references": [
+      { "id": "texas_80pct_rule", "settlement": "settled", "note": "TX Tax Code §151.351" }
+    ]
+  },
+  "advisories": [],
+  "disclaimer": "This calculation is informational only and does not constitute tax advice."
 }
 ```
 
@@ -98,6 +172,7 @@ curl -X POST https://agenttax.io/api/v1/calculate \
 | `/api/v1/network-directory` | GET | None | Browse agent directory |
 | `/api/v1/export/1099-da` | GET | API Key | IRS Form 1099-DA export |
 | `/api/v1/verify` | POST | None | Cross-verify rates against 7 sources |
+| `/api/v1/agents` | GET | None | This integration guide (plain text) |
 | `/api/v1/health` | GET | None | Health check |
 
 ### Authentication
@@ -106,7 +181,7 @@ Three modes — use whichever fits your architecture:
 
 1. **API Key** (recommended): `X-API-Key: atx_live_xxx` header or `Authorization: Bearer atx_live_xxx`
 2. **x402 USDC micropayment**: Pay-per-call via x402 protocol (USDC on Base). No account needed.
-3. **Demo mode**: No auth. Rate-limited (50/day). Good for testing.
+3. **Demo mode**: No auth. 50 calls/day, 30/min. Returns simplified responses (no audit trail).
 
 ### POST /api/v1/calculate — Required Fields
 
@@ -126,7 +201,7 @@ Three modes — use whichever fits your architecture:
 | `work_type` | string | inferred | `compute`, `research`, `content`, `consulting`, `trading` |
 | `is_b2b` | boolean | false | B2B flag (affects rates in MD, IA) |
 | `seller_remitting` | boolean | null | Whether seller is collecting tax |
-| `nexus_override` | array | null | Override nexus states (demo/x402 only) |
+| `nexus_override` | object | null | Override nexus states (demo/x402 only) |
 
 ### Transaction Types
 
@@ -153,16 +228,38 @@ For trading bots and agents that buy/sell assets:
 curl -X POST https://agenttax.io/api/v1/trades \
   -H "X-API-Key: atx_live_your_key" \
   -H "Content-Type: application/json" \
-  -d '{"side": "buy", "asset": "COMPUTE", "quantity": 100, "price_per_unit": 12.50}'
+  -d '{
+    "asset_symbol": "COMPUTE",
+    "trade_type": "buy",
+    "quantity": 100,
+    "price_per_unit": 12.50
+  }'
 
 # Log a sell — response includes realized gain/loss
 curl -X POST https://agenttax.io/api/v1/trades \
   -H "X-API-Key: atx_live_your_key" \
   -H "Content-Type: application/json" \
-  -d '{"side": "sell", "asset": "COMPUTE", "quantity": 50, "price_per_unit": 18.00}'
+  -d '{
+    "asset_symbol": "COMPUTE",
+    "trade_type": "sell",
+    "quantity": 50,
+    "price_per_unit": 18.00,
+    "resident_state": "TX"
+  }'
 ```
 
-Cost basis methods: FIFO (default), LIFO, Specific ID.
+### POST /api/v1/trades — Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `asset_symbol` | string | yes | Asset identifier (e.g., `"COMPUTE"`, `"GPU_HOUR"`) |
+| `trade_type` | `"buy"` or `"sell"` | yes | Buy or sell |
+| `quantity` | number | yes | Number of units |
+| `price_per_unit` | number | yes | Price per unit in USD |
+| `accounting_method` | string | no | `"fifo"` (default), `"lifo"`, or `"specific_id"` |
+| `resident_state` | string | no | 2-letter state code for state tax estimates on gains |
+| `specific_lot_id` | string | no | Lot ID for specific identification method |
+| `notes` | string | no | Free-text notes |
 
 ---
 
@@ -170,13 +267,16 @@ Cost basis methods: FIFO (default), LIFO, Specific ID.
 
 ### Audit Trail
 
-Every response (authenticated) includes an `audit_trail` showing exactly how the tax was determined:
+Every authenticated response includes an `audit_trail` showing exactly how the tax was determined (see full example in Step 3 above):
 
-- **`jurisdiction_chain`**: Layered rate composition (state + local + special district)
+- **`jurisdiction_chain`**: Layered rate composition — state base rate, local add-on, special rules (TX 80%, MD split, CT 1%)
 - **`classification`**: How your `transaction_type` and `work_type` mapped to an economic category
-- **`taxability`**: Which state rule determined taxability and at what rate
+- **`taxability`**: Which state rule (TAXABILITY_MATRIX or digitalTaxable fallback) determined taxability
 - **`exemptions_evaluated`**: Every exemption check that was run and its result
-- **`policy_references`**: Which entries in the AgentTax Tax Policy Registry applied
+- **`final_determination`**: `"taxable"` or the exemption type that applied
+- **`policy_references`**: Which entries in the AgentTax Tax Policy Registry applied, with settlement status
+
+Demo mode responses do not include `audit_trail`, `advisories`, or detailed tax objects. Create a free account ($0) to get the full response.
 
 ### Confidence Scoring
 
@@ -196,7 +296,6 @@ The `advisories` array flags edge cases: zip/state mismatches, nexus warnings, c
 ### Pattern 1: Pre-transaction tax lookup (buyer)
 
 ```python
-# Before purchasing compute, check tax obligation
 import requests
 
 response = requests.post("https://agenttax.io/api/v1/calculate", json={
@@ -208,7 +307,7 @@ response = requests.post("https://agenttax.io/api/v1/calculate", json={
     "work_type": "compute",
     "counterparty_id": "gpu-provider-42",
     "is_b2b": True
-}, headers={"X-API-Key": "atx_live_your_key"})
+}, headers={"X-API-Key": API_KEY})
 
 tax = response.json()
 total_cost = 1000 + tax["total_tax"]  # Factor tax into budget
@@ -217,7 +316,6 @@ total_cost = 1000 + tax["total_tax"]  # Factor tax into budget
 ### Pattern 2: Invoice tax collection (seller)
 
 ```python
-# Calculate tax to add to invoice
 response = requests.post("https://agenttax.io/api/v1/calculate", json={
     "role": "seller",
     "amount": 2500,
@@ -226,19 +324,19 @@ response = requests.post("https://agenttax.io/api/v1/calculate", json={
     "transaction_type": "saas",
     "work_type": "content",
     "counterparty_id": "buyer-agent-99"
-}, headers={"X-API-Key": "atx_live_your_key"})
+}, headers={"X-API-Key": API_KEY})
 
 tax = response.json()
 invoice_total = 2500 + tax["total_tax"]
 ```
 
-### Pattern 3: Multi-state compliance check
+### Pattern 3: Multi-state rate check
 
 ```python
-# Check rates across states you operate in
 for state in ["TX", "NY", "CA", "WA"]:
     r = requests.get(f"https://agenttax.io/api/v1/rates?state={state}")
-    print(f"{state}: {r.json()['rate']*100}% — {r.json()['saasNote']}")
+    data = r.json()
+    print(f"{state}: {data['rate']*100}% — {data['saasNote']}")
 ```
 
 ### Pattern 4: x402 micropayment (no account)
@@ -249,35 +347,11 @@ for state in ["TX", "NY", "CA", "WA"]:
 response = x402_client.post("https://agenttax.io/api/v1/calculate", json={...})
 ```
 
-### Pattern 5: JavaScript / Node.js
-
-```javascript
-const response = await fetch("https://agenttax.io/api/v1/calculate", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "X-API-Key": "atx_live_your_key",
-  },
-  body: JSON.stringify({
-    role: "buyer",
-    amount: 750,
-    buyer_state: "WA",
-    buyer_zip: "98101",
-    transaction_type: "ai_model_access",
-    work_type: "compute",
-    counterparty_id: "model-provider-7",
-  }),
-});
-
-const tax = await response.json();
-console.log(`Tax: $${tax.total_tax} (${(tax.combined_rate * 100).toFixed(2)}%)`);
-```
-
 ---
 
 ## Key Concepts
 
-- **Nexus**: You only need to collect sales tax in states where you have economic nexus. Configure via `/api/v1/nexus`.
+- **Nexus**: Sellers must configure nexus states to get non-zero tax results. Without nexus config, seller calculations return $0. Use `POST /api/v1/nexus`. Buyers don't need this — use tax is calculated regardless.
 - **Use tax**: If the seller doesn't collect, the buyer owes use tax. AgentTax calculates both.
 - **Conservative default**: When law is ambiguous, AgentTax defaults to more tax, not less. Better to over-reserve than face penalties.
 - **Local rates**: 105+ zip codes with city/county/district rates. Pass `buyer_zip` to get combined rates.
@@ -314,7 +388,7 @@ All errors return `{ "success": false, "error": "message", "agent_guide": "https
 
 ## Need Help?
 
+- This guide (always current): https://agenttax.io/api/v1/agents
 - API docs: https://agenttax.io/?view=api-docs
 - Health check: https://agenttax.io/api/v1/health
 - Rate data: https://agenttax.io/api/v1/rates
-- This guide (always current): https://agenttax.io/api/v1/agents

@@ -34,14 +34,18 @@ def calculate_tax(role, amount, buyer_state, transaction_type, counterparty_id,
     return resp.json()
 
 
-def log_trade(side, asset, quantity, price_per_unit):
+def log_trade(trade_type, asset_symbol, quantity, price_per_unit, resident_state=None):
     """Log a buy or sell for capital gains tracking."""
-    resp = requests.post(f"{BASE_URL}/api/v1/trades", json={
-        "side": side,
-        "asset": asset,
+    payload = {
+        "trade_type": trade_type,
+        "asset_symbol": asset_symbol,
         "quantity": quantity,
         "price_per_unit": price_per_unit,
-    }, headers={"X-API-Key": API_KEY})
+    }
+    if resident_state:
+        payload["resident_state"] = resident_state
+    resp = requests.post(f"{BASE_URL}/api/v1/trades", json=payload,
+                         headers={"X-API-Key": API_KEY})
     return resp.json()
 
 
