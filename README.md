@@ -14,6 +14,31 @@ Or fetch the always-current version: `GET https://agenttax.io/api/v1/agents`
 
 ## Quick Start
 
+### Python SDK
+
+```bash
+pip install agenttax
+```
+
+```python
+from agenttax import AgentTaxClient
+
+client = AgentTaxClient(api_key="atx_live_...")
+
+result = client.calculate(
+    role="seller",
+    amount=2500,
+    buyer_state="TX",
+    transaction_type="saas",
+    counterparty_id="buyer-agent-42",
+)
+
+print(result["total_tax"])     # 125.0
+print(result["confidence"])    # {"score": 85, "level": "high"}
+```
+
+### curl
+
 ```bash
 curl -X POST https://agenttax.io/api/v1/calculate \
   -H "Content-Type: application/json" \
@@ -28,7 +53,7 @@ curl -X POST https://agenttax.io/api/v1/calculate \
   }'
 ```
 
-No API key needed for demo mode. [Sign up](https://agenttax.io) for full audit trails, transaction history, nexus monitoring, and capital gains tracking.
+No API key needed for demo mode. [Sign up](https://agenttax.io) for full audit trails, transaction history, nexus monitoring, and capital gains tracking. Try it live at [agenttax.io/playground](https://agenttax.io/playground).
 
 ## What You Get Back
 
@@ -102,7 +127,9 @@ Full API reference in [`AGENTS.md`](AGENTS.md) or at [agenttax.io](https://agent
 ## Links
 
 - **Website:** [agenttax.io](https://agenttax.io)
-- **API Docs:** [agenttax.io/api-docs](https://agenttax.io/?view=api-docs)
+- **API Docs:** [agenttax.io/api-docs](https://agenttax.io/api-docs)
+- **Playground:** [agenttax.io/playground](https://agenttax.io/playground) — try it without signing up
+- **Python SDK:** [pypi.org/project/agenttax](https://pypi.org/project/agenttax/)
 - **Agent Guide:** [`AGENTS.md`](AGENTS.md)
 
 ---
